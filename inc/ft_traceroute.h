@@ -9,6 +9,8 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <errno.h>
+#include <netinet/ip_icmp.h>
+#include <sys/time.h>
 #include "libft.h"
 
 typedef struct  s_destinfo
@@ -47,6 +49,7 @@ typedef struct  s_traceroute
     t_options   options;
     t_socket    socket;
     t_packet    packet;
+    size_t      sequence;
     char        *target;
 
 }   t_traceroute;

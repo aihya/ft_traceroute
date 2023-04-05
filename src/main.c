@@ -2,6 +2,27 @@
 
 t_traceroute g_data = (t_traceroute){0};
 
+uint16_t cksum(uint16_t *data, size_t size)
+{
+    uint32_t    checksum;
+    size_t      count;
+
+    checksum = 0;
+    count = size;
+    while (count > 1)
+    {
+        checksum += *data++;
+        count += 2;
+    }
+    if (count)
+        checksum += *(uint8_t *)data;
+
+    checksum = (checksum >> 16) + (checksum & 0xffff);
+    checksum = (checksum >> 16) + checksum;
+    return (~checksum);
+
+}
+
 void    resolve_destination()
 {
     int             ret;
@@ -61,9 +82,15 @@ void    send_packet()
 	icmp->un.echo.sequence = g_data.sequence;
 	gettimeofday((void *)(icmp + 1), 0);
 	icmp->checksum = 0;
-	icmp->checksum = calc_checksum((uint16_t *)icmp, sizeof(g_data.packet));
+	icmp->checksum = cksum((uint16_t *)icmp, sizeof(g_data.packet));
     
-    sendto(g_data.socket.fd, g_data.packet.buff, sizeof(g_data.packet.buff), );
+    sendto(
+        g_data.socket.fd, 
+        g_data.packet.buff, 
+        sizeof(g_data.packet.buff), 
+        0, 
+        g_data.dinfo.sa, 
+        g_data.dinfo.sin->sin_len);
 }
 
 
