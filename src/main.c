@@ -20,7 +20,32 @@ uint16_t cksum(uint16_t *data, size_t size)
     checksum = (checksum >> 16) + (checksum & 0xffff);
     checksum = (checksum >> 16) + checksum;
     return (~checksum);
+}
 
+
+/////////////////////////////////////////////////////////
+//// file descriptors of the probes
+/////////////////////////////////////////////////////////
+
+void    create_probes()
+{
+    size_t  i;
+
+    FDS = malloc(sizeof(int) * g_data.options.q);
+    for (size_t i = 0; i < g_data.options.q; i++)
+    {
+        if ((FDS[i] = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP)) == -1)
+        {
+            fprintf(stderr, "ft_traceroute: %s\n", strerror(errno));
+
+            // TODO: IMPORTANT:
+            //      Don't exit unless you free the memory of the previous allocations
+            //      (fds, read_set, send_set, expt_set)
+            exit(FDS[i]);
+        }
+
+        
+    }
 }
 
 void    resolve_destination()
