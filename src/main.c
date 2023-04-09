@@ -2,6 +2,9 @@
 
 t_traceroute g_data = (t_traceroute){0};
 
+/***********************************************************/
+/* Utilities                                               */
+/***********************************************************/
 uint16_t cksum(uint16_t *data, size_t size)
 {
     uint32_t    checksum;
@@ -12,40 +15,21 @@ uint16_t cksum(uint16_t *data, size_t size)
     while (count > 1)
     {
         checksum += *data++;
-        count += 2;
+        count -= 2;
     }
     if (count)
         checksum += *(uint8_t *)data;
 
     checksum = (checksum >> 16) + (checksum & 0xffff);
     checksum = (checksum >> 16) + checksum;
+
     return (~checksum);
 }
 
-
-/////////////////////////////////////////////////////////
-//// file descriptors of the probes
-/////////////////////////////////////////////////////////
-
-void    create_probes()
+void    presentable(struct in_addr addr)
 {
-    size_t  i;
-
-    FDS = malloc(sizeof(int) * g_data.options.q);
-    for (size_t i = 0; i < g_data.options.q; i++)
-    {
-        if ((FDS[i] = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP)) == -1)
-        {
-            fprintf(stderr, "ft_traceroute: %s\n", strerror(errno));
-
-            // TODO: IMPORTANT:
-            //      Don't exit unless you free the memory of the previous allocations
-            //      (fds, read_set, send_set, expt_set)
-            exit(FDS[i]);
-        }
-
-        
-    }
+    ft_bzero(g_data.presentable, sizeof(g_data.presentable));
+    inet_ntop(AF_INET, &addr, g_data.presentable, sizeof(g_data.presentable));
 }
 
 void    resolve_destination()
@@ -72,7 +56,6 @@ void    resolve_destination()
     }
     if (p)
     {
-        // TODO: IMPORTANT: Replace with ft_memcpy
         ft_memcpy(&g_data.dinfo.ai, p, sizeof(struct addrinfo));
         g_data.dinfo.sa = g_data.dinfo.ai.ai_addr;
         g_data.dinfo.sin = (struct sockaddr_in *)g_data.dinfo.sa;
@@ -84,98 +67,121 @@ void    resolve_destination()
 
 void    setup_socket()
 {
-    g_data.socket.fd = socket(AF_INET, SOCK_DGRAM, 0);
+    g_data.socket.fd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
     if (g_data.socket.fd == -1)
     {
         fprintf(stderr, "traceroute: socket: %s\n", strerror(errno));
         exit(errno);
     }
-
-    FD_SET(g_data.socket.fd, &g_data.socket.read_set);
 }
 
 
-void    send_packet()
+void    send_packets()
 {
+    int             rv;
     struct icmphdr	*icmp;
+    size_t          npackets;
 
-	ft_memset(g_data.packet.buff, 0x00, sizeof(g_data.packet.buff));
-	icmp = (struct icmphdr *)g_data.packet.buff;
+	ft_memset(g_data.packet, 0x00, sizeof(g_data.packet));
+	icmp = (struct icmphdr *)g_data.packet;
 	icmp->type = ICMP_ECHO;
 	icmp->code = 0;
 	icmp->un.echo.id = (uint16_t)getpid();
 	icmp->un.echo.sequence = g_data.sequence;
-	gettimeofday((void *)(icmp + 1), 0);
-	icmp->checksum = 0;
-	icmp->checksum = cksum((uint16_t *)icmp, sizeof(g_data.packet));
-    
-    sendto(
-        g_data.socket.fd, 
-        g_data.packet.buff, 
-        sizeof(g_data.packet.buff), 
-        0, 
-        g_data.dinfo.sa, 
-        g_data.dinfo.sin->sin_len);
-}
 
-
-void    receive_packet()
-{
-
-}
-
-
-void    traceroute()
-{
-    int             nqueries;
-    int             npackets;
-    int             rv;
-    struct timeval  tv;
-
-    tv.tv_sec = 10;
-    tv.tv_usec = 0;
-    FD_ZERO(&g_data.socket.send_set);
-    FD_ZERO(&g_data.socket.read_set);
-    FD_ZERO(&g_data.socket.expt_set);
-
-    nqueries = 0;
-    while (nqueries < g_data.options.m)
+    npackets = 0;
+    for (int npackets = 0; npackets < g_data.options.q; npackets++)
     {
-        // Send query packets.
-        npackets = 0;
-        while (npackets < g_data.options.q)
-        {
-            printf("sending...\n");
-            // while ((rv = select(1, NULL, &g_data.socket.send_set, NULL, NULL)) == 0)
-            //     ;
-            send_packet();
-            printf("ttl: %llu sent: %llu\n", nqueries, npackets);
-            npackets++;
-        }
 
-        // Receive query packets.
-        npackets = 0;
-        while (npackets < g_data.options.q)
-        {
-            printf("receiving...\n");
-            while ((rv = select(1, &g_data.socket.read_set, NULL, NULL, &tv)) == 0)
-                ;
-            receive_packet();
-            printf("ttl: %llu sent: %llu\n", nqueries, npackets);
-            npackets++;
-        }
+        gettimeofday((void *)(icmp + 1), 0);
+	    icmp->checksum = 0;
+	    icmp->checksum = cksum((uint16_t *)icmp, sizeof(g_data.packet));
 
-        nqueries++;
+        rv = sendto(
+            SOCK_FD, 
+            g_data.packet, 
+            sizeof(g_data.packet), 
+            0, 
+            g_data.dinfo.sa, 
+            g_data.dinfo.ai.ai_addrlen
+        );
+    }
+}
+
+
+void    receive_packets()
+{
+    int             rv;
+    static char     buf[IP_MAXPACKET];
+    size_t          len;
+    struct sockaddr src_addr;
+    socklen_t       addr_len;
+    struct timeval  wait;
+
+    wait.tv_sec = 1;
+    wait.tv_usec = 0;
+
+    FD_ZERO(&READ_FDS);
+    FD_SET(SOCK_FD, &READ_FDS);
+
+    for (int npackets = 0; npackets < g_data.options.q; npackets++)
+    {
+        len = IP_MAXPACKET;
+
+        wait.tv_sec = 5;
+        wait.tv_usec = 0;
+        rv = select(1, &READ_FDS, NULL, NULL, &wait);
+
+        src_addr = (struct sockaddr){0};
+        addr_len = 0;
+
+        // int rv = recvfrom(SOCK_FD, buf, len, 0, &src_addr, &addr_len);
+
+        if (rv <= 0)
+        {
+            printf("*(%d: %s) ", rv, strerror(errno));
+            fflush(stdout);
+        }
+        else
+        {
+            recvfrom(SOCK_FD, buf, len, MSG_WAITALL, &src_addr, &addr_len);
+            presentable(((struct sockaddr_in*)&src_addr)->sin_addr);
+            printf("%s ", g_data.presentable);
+        }
+    }
+}
+
+
+void    loop()
+{
+    int ttl;
+
+    presentable(g_data.dinfo.sin->sin_addr);
+    printf("traceroute to %s (%s), %d hops max\n", 
+        g_data.target, 
+        g_data.presentable, 
+        g_data.options.m
+    );
+
+    ttl = 1;
+    for (int nqueries = 0; nqueries < g_data.options.m; nqueries++)
+    {
+        setsockopt(SOCK_FD, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl));
+        printf("% 3d   ", nqueries + 1);
+        send_packets();
+        receive_packets();
+        printf("\n");
+        ttl++;
     }
 }
 
 int main(int argc, char **argv)
 {
     g_data.target = argv[1];
-    g_data.options.m = 30;
+    g_data.options.m = 64;
     g_data.options.q = 3;
     resolve_destination();
     setup_socket();
-    traceroute();
+    loop();
     return (0);
 }
