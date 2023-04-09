@@ -26,10 +26,10 @@ uint16_t cksum(uint16_t *data, size_t size)
     return (~checksum);
 }
 
-void    presentable(struct in_addr addr)
+void    presentable(struct in_addr addr, char *buffer, size_t size)
 {
-    ft_bzero(g_data.presentable, sizeof(g_data.presentable));
-    inet_ntop(AF_INET, &addr, g_data.presentable, sizeof(g_data.presentable));
+    ft_bzero(buffer, size);
+    inet_ntop(AF_INET, &addr, buffer, size);
 }
 
 void    resolve_destination()
@@ -69,7 +69,7 @@ void    setup_socket()
 {
     struct sockaddr_in  addr;
     
-    SOCK_FD = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+    SOCK_FD = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
     if (SOCK_FD == -1)
     {
         fprintf(stderr, "traceroute: socket: %s\n", strerror(errno));
@@ -78,7 +78,7 @@ void    setup_socket()
 
     addr = (struct sockaddr_in){0};
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(33434);
+    addr.sin_port = htons(20);
     addr.sin_addr.s_addr = INADDR_ANY;
 
     if (bind(SOCK_FD, (struct sockaddr *)&addr, sizeof(addr)) < 0)
@@ -86,6 +86,7 @@ void    setup_socket()
         fprintf(stderr, "traceroute: bind: %s\n", strerror(errno));
         exit(errno);
     }
+
 }
 
 
@@ -93,6 +94,8 @@ void    send_packets()
 {
     int             rv;
     struct icmphdr	*icmp;
+    struct iphdr *ip;
+
 
 	ft_memset(g_data.packet, 0x00, sizeof(g_data.packet));
 	icmp = (struct icmphdr *)g_data.packet;
@@ -118,35 +121,43 @@ void    send_packets()
     }
 }
 
-void    receive_packets()
+int receive_packets()
 {
     int             rv;
     static char     buf[IP_MAXPACKET];
     struct sockaddr src_addr;
     socklen_t       addr_len;
     struct timeval  wait;
+    int             is_there;
 
+    is_there = 0;
     for (int npackets = 0; npackets < g_data.options.q; npackets++)
     {
+        FD_ZERO(&g_data.socket.readfds);
+        FD_SET(SOCK_FD, &g_data.socket.readfds);
         wait.tv_sec = 3;
         wait.tv_usec = 0;
         rv = select(SOCK_FD + 1, &g_data.socket.readfds, NULL, NULL, &wait);
 
         if (rv <= 0)
         {
-            printf("*(%d: %s) ", rv, strerror(errno));
-            fflush(stdout);
+            printf("* ", rv, strerror(errno));
+            fflush(stdout);  // TODO: IMPORTANT: REMOVE
         }
         else
         {
-            // src_addr = (struct sockaddr){0};
-            // addr_len = 0;
+            src_addr = (struct sockaddr){0};
+            addr_len = sizeof(struct sockaddr_in);
+            ft_bzero(buf, sizeof(buf));
             rv = recvfrom(SOCK_FD, buf, sizeof(buf), 0, &src_addr, &addr_len);
             struct sockaddr_in  sin = *(struct sockaddr_in *)&src_addr;
-            presentable(sin.sin_addr);
-            printf("(%s) %d %d", g_data.presentable, addr_len, rv);
+            presentable(sin.sin_addr, g_data.presentable.current, PRESENT_SIZE);
+            printf("(%s) ", g_data.presentable.current, addr_len, rv);
+            if (!ft_strcmp(g_data.presentable.current, g_data.presentable.target))
+                is_there = 1;
         }
     }
+    return (is_there);
 }
 
 
@@ -154,22 +165,24 @@ void    loop()
 {
     int ttl;
 
-    presentable(g_data.dinfo.sin->sin_addr);
+    presentable(g_data.dinfo.sin->sin_addr, g_data.presentable.target, PRESENT_SIZE);
     printf("traceroute to %s (%s), %lld hops max\n", 
         g_data.target, 
-        g_data.presentable, 
+        g_data.presentable.target, 
         g_data.options.m
     );
 
-    FD_ZERO(&g_data.socket.readfds);
-    FD_SET(SOCK_FD, &g_data.socket.readfds);
     ttl = 1;
     for (int nqueries = 0; nqueries < g_data.options.m; nqueries++)
     {
         setsockopt(SOCK_FD, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl));
         printf("% 3d   ", nqueries + 1);
         send_packets();
-        receive_packets();
+        if (receive_packets())
+        {
+            printf("\n");
+            break;
+        }
         printf("\n");
         ttl++;
     }
