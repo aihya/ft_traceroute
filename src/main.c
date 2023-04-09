@@ -40,8 +40,8 @@ void    resolve_destination()
 
     hints = (struct addrinfo){0};
     hints.ai_family     = AF_INET;
-    hints.ai_socktype   = SOCK_RAW;
-    hints.ai_protocol   = IPPROTO_ICMP;
+    hints.ai_socktype   = SOCK_DGRAM;
+    hints.ai_protocol   = IPPROTO_UDP;
 
     if ((ret = getaddrinfo(g_data.target, NULL, &hints, &g_data.dinfo.result)) < 0)
     {
@@ -51,7 +51,7 @@ void    resolve_destination()
 
     for (p = g_data.dinfo.result; p; p = p->ai_next)
     {
-        if (p->ai_protocol == IPPROTO_ICMP && p->ai_family == AF_INET)
+        if (p->ai_protocol == IPPROTO_UDP && p->ai_family == AF_INET)
             break;
     }
     if (p)
@@ -67,10 +67,23 @@ void    resolve_destination()
 
 void    setup_socket()
 {
-    g_data.socket.fd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
-    if (g_data.socket.fd == -1)
+    struct sockaddr_in  addr;
+    
+    SOCK_FD = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (SOCK_FD == -1)
     {
         fprintf(stderr, "traceroute: socket: %s\n", strerror(errno));
+        exit(errno);
+    }
+
+    addr = (struct sockaddr_in){0};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(33434);
+    addr.sin_addr.s_addr = INADDR_ANY;
+
+    if (bind(SOCK_FD, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+    {
+        fprintf(stderr, "traceroute: bind: %s\n", strerror(errno));
         exit(errno);
     }
 }
@@ -102,18 +115,17 @@ void    send_packets()
             g_data.packet, 
             sizeof(g_data.packet), 
             0, 
-            g_data.dinfo.sa, 
+            g_data.dinfo.ai.ai_addr, 
             g_data.dinfo.ai.ai_addrlen
         );
+        perror("sendto");
     }
 }
-
 
 void    receive_packets()
 {
     int             rv;
     static char     buf[IP_MAXPACKET];
-    size_t          len;
     struct sockaddr src_addr;
     socklen_t       addr_len;
     struct timeval  wait;
@@ -126,7 +138,6 @@ void    receive_packets()
 
     for (int npackets = 0; npackets < g_data.options.q; npackets++)
     {
-        len = IP_MAXPACKET;
 
         wait.tv_sec = 5;
         wait.tv_usec = 0;
@@ -144,7 +155,7 @@ void    receive_packets()
         }
         else
         {
-            recvfrom(SOCK_FD, buf, len, MSG_WAITALL, &src_addr, &addr_len);
+            recvfrom(SOCK_FD, buf, sizeof(buf), MSG_DONTWAIT, &src_addr, &addr_len);
             presentable(((struct sockaddr_in*)&src_addr)->sin_addr);
             printf("%s ", g_data.presentable);
         }
