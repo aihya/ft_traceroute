@@ -17,7 +17,7 @@ int		ft_strcmp(const char *s1, const char *s2)
 
 	s1_cpy = s1;
 	s2_cpy = s2;
-	while ((*s1_cpy || *s2_cpy) && (*s1_cpy++ == *s2_cpy++))
+	while ((*s1_cpy && *s2_cpy) && (*s1_cpy++ == *s2_cpy++))
 		;
 	return ((unsigned char)*(s1_cpy - 1) - (unsigned char)*(s2_cpy - 1));
 }

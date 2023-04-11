@@ -76,16 +76,16 @@ void    setup_socket()
         exit(errno);
     }
 
-    // addr = (struct sockaddr_in){0};
-    // addr.sin_family = AF_INET;
-    // addr.sin_port = htons(20);
-    // addr.sin_addr.s_addr = INADDR_ANY;
+    addr = (struct sockaddr_in){0};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(20);
+    addr.sin_addr.s_addr = INADDR_ANY;
 
-    // if (bind(SOCK_FD, (struct sockaddr *)&addr, sizeof(addr)) < 0)
-    // {
-    //     fprintf(stderr, "traceroute: bind: %s\n", strerror(errno));
-    //     exit(errno);
-    // }
+    if (bind(SOCK_FD, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+    {
+        fprintf(stderr, "traceroute: bind: %s\n", strerror(errno));
+        exit(errno);
+    }
 
 }
 
@@ -104,8 +104,6 @@ void    send_packets()
 
     for (int npackets = 0; npackets < g_data.options.q; npackets++)
     {
-        gettimeofday((void *)(icmp + 1), 0);
-
 	    icmp->checksum = 0;
 	    icmp->checksum = cksum((uint16_t *)icmp, sizeof(g_data.packet));
 
@@ -117,6 +115,10 @@ void    send_packets()
             g_data.dinfo.ai.ai_addr, 
             g_data.dinfo.ai.ai_addrlen
         );
+
+        g_data.send_time = (struct timeval){0};
+        gettimeofday(&g_data.send_time, NULL);
+
         if (rv < 0)
         {
             fprintf(stderr, "traceroute: %s\n", strerror(errno));
@@ -138,36 +140,36 @@ double  delta_t(struct timeval t1, struct timeval t2)
 }
 
 
-struct timeval  extract_data(char *packet)
-{
-    struct iphdr    *ip;
-    struct icmphdr  *icmp;
-    struct iphdr    *oip;
-    struct icmphdr  *oicmp;
-    struct timeval  tv;
-    struct timeval  *ptv;
+// struct timeval  extract_data(char *packet)
+// {
+//     struct iphdr    *ip;
+//     struct iphdr    *oip;
+//     struct icmphdr  *icmp;
+//     struct icmphdr  *oicmp;
+//     struct timeval  tv;
+//     struct timeval  *ptv;
 
-    ip = (struct iphdr *)(packet);
-    if (ip->protocol == IPPROTO_ICMP && ip->version == IPVERSION)
-    {
-        icmp = (struct icmphdr *)(packet + (ip->ihl << 2));
-        if (icmp->type == ICMP_ECHOREPLY && icmp->code == 0 && icmp->un.echo.id == (uint16_t)getpid())
-            tv = *(struct timeval *)(icmp + 1);
-        else
-        {
-            oip   = (struct iphdr *)(packet + (ip->ihl << 2) + sizeof(struct icmphdr));
-	        oicmp = (struct icmphdr *)(packet + (ip->ihl << 2) + sizeof(struct icmphdr) + (oip->ihl << 2));
-            ptv = (struct timeval *)(oicmp + 1);
-            printf("%d\n", ptv->tv_sec);
-            tv = *(struct timeval *)(oicmp+1);
-            printf("sec: %d, usec: %d\n", ((struct timeval *)(oicmp+1))->tv_sec, ((struct timeval *)(oicmp+1))->tv_usec);
-        }
-    }
-    else
-        tv = (struct timeval){0};
-    printf("\n--> %d\n", tv);
-    return tv;
-}
+//     ip = (struct iphdr *)(packet);
+//     if (ip->protocol == IPPROTO_ICMP && ip->version == IPVERSION)
+//     {
+//         icmp = (struct icmphdr *)(packet + (ip->ihl << 2));
+//         if (icmp->type == ICMP_ECHOREPLY && icmp->code == 0 && icmp->un.echo.id == (uint16_t)getpid())
+//             tv = *(struct timeval *)(icmp + 1);
+//         else
+//         {
+//             oip   = (struct iphdr *)(packet + (ip->ihl << 2) + sizeof(struct icmphdr));
+// 	        oicmp = (struct icmphdr *)(packet + (ip->ihl << 2) + sizeof(struct icmphdr) + (oip->ihl << 2));
+//             ptv = (struct timeval *)(oicmp + 1);
+//             printf("%d\n", ptv->tv_sec);
+//             tv = *(struct timeval *)(oicmp + 1);
+//             printf("sec: %d, usec: %d\n", ((struct timeval *)(oicmp+1))->tv_sec, ((struct timeval *)(oicmp+1))->tv_usec);
+//         }
+//     }
+//     else
+//         tv = (struct timeval){0};
+//     printf("\n--> %d\n", tv);
+//     return tv;
+// }
 
 
 int receive_packets()
@@ -180,7 +182,8 @@ int receive_packets()
     struct timeval  send_tv;
     struct timeval  recv_tv;
     int             is_there;
-    char            str[1024];
+    char            str[256];
+    char            prv_str[256];
     static int      nqueries = 1;
     char            nqueries_str[6];
     int             new_line;
@@ -189,15 +192,17 @@ int receive_packets()
     is_there = 0;
     for (int npackets = 0; npackets < g_data.options.q; npackets++)
     {
-        ft_bzero(buf, sizeof(buf));
+        ft_bzero(buf, ft_strlen(buf));
 
         FD_ZERO(&g_data.socket.readfds);
         FD_SET(SOCK_FD, &g_data.socket.readfds);
 
         wait.tv_sec = 3;
         wait.tv_usec = 0;
+
         rv = select(SOCK_FD + 1, &g_data.socket.readfds, NULL, NULL, &wait);
-        gettimeofday(&recv_tv, NULL);
+        g_data.recv_time = (struct timeval){0};
+        gettimeofday(&g_data.recv_time, NULL);
 
         if (rv <= 0)
             sprintf(str, " * ");
@@ -206,12 +211,13 @@ int receive_packets()
             src_addr = (struct sockaddr){0};
             addr_len = sizeof(struct sockaddr_in);
             rv = recvfrom(SOCK_FD, buf, sizeof(buf), MSG_WAITALL, &src_addr, &addr_len);
-            send_tv = extract_data(buf);
-            // if (send_tv.tv_sec == 0 && send_tv.tv_usec == 0)
-                // printf("Mok momkina\n");
+
             struct sockaddr_in  sin = *(struct sockaddr_in *)&src_addr;
             presentable(sin.sin_addr, g_data.presentable.current, PRESENT_SIZE);
-            sprintf(str, " %s  %.3lfms ", g_data.presentable.current, delta_t(send_tv, recv_tv));
+            if (ft_strcmp(prv_str, g_data.presentable.current) == 0)
+                sprintf(str, " %.3lfms ", delta_t(g_data.send_time, g_data.recv_time));
+            else
+                sprintf(str, " %s  %.3lfms ", g_data.presentable.current, delta_t(g_data.send_time, g_data.recv_time));
         }
 
         if (!ft_strcmp(g_data.presentable.current, g_data.presentable.target))
@@ -224,6 +230,8 @@ int receive_packets()
             new_line = 0;
         }
 
+        ft_bzero(prv_str, sizeof(prv_str));
+        ft_memcpy(prv_str, g_data.presentable.current, sizeof(g_data.presentable.current));
         ft_putstr(str);
     }
     nqueries++;

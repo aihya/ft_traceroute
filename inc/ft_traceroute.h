@@ -16,7 +16,7 @@
 # include <sys/time.h>
 # include "libft.h"
 
-# define PACKET_SIZE (sizeof(struct icmphdr) + sizeof(struct timeval))
+# define PACKET_SIZE (sizeof(struct icmphdr))
 # define SOCK_FD     g_data.socket.fd
 # define READ_FDS    g_data.socket.readfds
 # define PRESENT_SIZE 256
@@ -59,6 +59,8 @@ typedef struct  s_traceroute
     size_t          sequence;
     char            packet[PACKET_SIZE];
     char            *target;
+    struct timeval  send_time;
+    struct timeval  recv_time;
 }   t_traceroute;
 
 extern t_traceroute g_data;
