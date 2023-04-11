@@ -16,7 +16,7 @@
 # include <sys/time.h>
 # include "libft.h"
 
-# define PACKET_SIZE (sizeof(struct icmphdr) + sizeof(struct timeval) + 40)
+# define PACKET_SIZE (sizeof(struct icmphdr) + sizeof(struct timeval))
 # define SOCK_FD     g_data.socket.fd
 # define READ_FDS    g_data.socket.readfds
 # define PRESENT_SIZE 256
