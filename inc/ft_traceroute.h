@@ -25,17 +25,18 @@ typedef struct  s_destinfo
 {
     struct addrinfo *result;
     struct addrinfo ai;
-    struct sockaddr *sa;
-    struct sockaddr_in *sin;
 }   t_destinfo;
 
 typedef struct  s_options
 {
     int         opt;
-    long long   m;
-    long long   p;
-    long long   q;
-    long long   N;
+    long long   m;  // max_ttl
+    long long   M;  // first_ttl
+    long long   q;  // Max number probs per ttl/hop
+    int         n;  // Print numerical address only
+    int         S;  // Print loss percentage
+    int         w;  // waittime
+    int         z;  // pausemsecs
 }   t_options;
 
 typedef struct s_socket

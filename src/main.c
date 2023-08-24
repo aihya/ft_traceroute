@@ -2,276 +2,113 @@
 
 t_traceroute g_data = (t_traceroute){0};
 
-/***********************************************************/
-/* Utilities                                               */
-/***********************************************************/
-uint16_t cksum(uint16_t *data, size_t size)
+void    usage()
 {
-    uint32_t    checksum;
-    size_t      count;
-
-    checksum = 0;
-    count = size;
-    while (count > 1)
-    {
-        checksum += *data++;
-        count -= 2;
-    }
-    if (count)
-        checksum += *(uint8_t *)data;
-
-    checksum = (checksum >> 16) + (checksum & 0xffff);
-    checksum = (checksum >> 16) + checksum;
-
-    return (~checksum);
+    printf(
+"Usage: traceroute [-adDeFInrSvx] [-f first_ttl] \
+[-M first_ttl] [-m max_ttl] [-P proto] [-q nqueries] [-s src_addr] \
+[-w waittime] [-z pausemsecs] host [packetlen]\n");
 }
 
-void    presentable(struct in_addr addr, char *buffer, size_t size)
+void    parse_options(int argc, char **argv)
 {
-    ft_bzero(buffer, size);
-    inet_ntop(AF_INET, &addr, buffer, size);
-}
+    int         i;
 
-void    resolve_destination()
-{
-    int             ret;
-    struct addrinfo hints;
-    struct addrinfo *p;
-
-    hints = (struct addrinfo){0};
-    hints.ai_family     = AF_INET;
-    hints.ai_socktype   = SOCK_RAW;
-    hints.ai_protocol   = IPPROTO_ICMP;
-
-    if ((ret = getaddrinfo(g_data.target, NULL, &hints, &g_data.dinfo.result)) < 0)
-    {
-        fprintf(stderr, "traceroute: %s: %s\n", g_data.target, gai_strerror(ret));
-        exit(ret);
-    }
-
-    for (p = g_data.dinfo.result; p; p = p->ai_next)
-    {
-        if (p->ai_protocol == IPPROTO_ICMP && p->ai_family == AF_INET)
-            break;
-    }
-    if (p)
-    {
-        ft_memcpy(&g_data.dinfo.ai, p, sizeof(struct addrinfo));
-        g_data.dinfo.sa = g_data.dinfo.ai.ai_addr;
-        g_data.dinfo.sin = (struct sockaddr_in *)g_data.dinfo.sa;
-        return ;
-    }
-    exit(0);
-}
-
-
-void    setup_socket()
-{
-    struct sockaddr_in  addr;
-    
-    SOCK_FD = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
-    if (SOCK_FD == -1)
-    {
-        fprintf(stderr, "traceroute: socket: %s\n", strerror(errno));
-        exit(errno);
-    }
-
-    addr = (struct sockaddr_in){0};
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(20);
-    addr.sin_addr.s_addr = INADDR_ANY;
-
-    if (bind(SOCK_FD, (struct sockaddr *)&addr, sizeof(addr)) < 0)
-    {
-        fprintf(stderr, "traceroute: bind: %s\n", strerror(errno));
-        exit(errno);
-    }
-
-}
-
-
-void    send_packets()
-{
-    int             rv;
-    struct icmphdr	*icmp;
-
-	ft_memset(g_data.packet, 0x00, sizeof(g_data.packet));
-	icmp = (struct icmphdr *)g_data.packet;
-	icmp->type = ICMP_ECHO;
-	icmp->code = 0;
-	icmp->un.echo.id = (uint16_t)getpid();
-	icmp->un.echo.sequence = g_data.sequence;
-
-    for (int npackets = 0; npackets < g_data.options.q; npackets++)
-    {
-	    icmp->checksum = 0;
-	    icmp->checksum = cksum((uint16_t *)icmp, sizeof(g_data.packet));
-
-        rv = sendto(
-            SOCK_FD, 
-            g_data.packet, 
-            sizeof(g_data.packet), 
-            0, 
-            g_data.dinfo.ai.ai_addr, 
-            g_data.dinfo.ai.ai_addrlen
-        );
-
-        g_data.send_time = (struct timeval){0};
-        gettimeofday(&g_data.send_time, NULL);
-
-        if (rv < 0)
-        {
-            fprintf(stderr, "traceroute: %s\n", strerror(errno));
-            exit(errno);
-        }
-    }
-}
-
-
-double  tv_to_double(struct timeval tv)
-{
-    return (tv.tv_sec * 1000. + tv.tv_usec  / 1000.);
-}
-
-
-double  delta_t(struct timeval t1, struct timeval t2)
-{
-    return tv_to_double(t2) - tv_to_double(t1);
-}
-
-
-// struct timeval  extract_data(char *packet)
-// {
-//     struct iphdr    *ip;
-//     struct iphdr    *oip;
-//     struct icmphdr  *icmp;
-//     struct icmphdr  *oicmp;
-//     struct timeval  tv;
-//     struct timeval  *ptv;
-
-//     ip = (struct iphdr *)(packet);
-//     if (ip->protocol == IPPROTO_ICMP && ip->version == IPVERSION)
-//     {
-//         icmp = (struct icmphdr *)(packet + (ip->ihl << 2));
-//         if (icmp->type == ICMP_ECHOREPLY && icmp->code == 0 && icmp->un.echo.id == (uint16_t)getpid())
-//             tv = *(struct timeval *)(icmp + 1);
-//         else
-//         {
-//             oip   = (struct iphdr *)(packet + (ip->ihl << 2) + sizeof(struct icmphdr));
-// 	        oicmp = (struct icmphdr *)(packet + (ip->ihl << 2) + sizeof(struct icmphdr) + (oip->ihl << 2));
-//             ptv = (struct timeval *)(oicmp + 1);
-//             printf("%d\n", ptv->tv_sec);
-//             tv = *(struct timeval *)(oicmp + 1);
-//             printf("sec: %d, usec: %d\n", ((struct timeval *)(oicmp+1))->tv_sec, ((struct timeval *)(oicmp+1))->tv_usec);
-//         }
-//     }
-//     else
-//         tv = (struct timeval){0};
-//     printf("\n--> %d\n", tv);
-//     return tv;
-// }
-
-
-int receive_packets()
-{
-    int             rv;
-    char            buf[IP_MAXPACKET];
-    struct sockaddr src_addr;
-    socklen_t       addr_len;
-    struct timeval  wait;
-    struct timeval  send_tv;
-    struct timeval  recv_tv;
-    int             is_there;
-    char            str[256];
-    char            prv_str[256];
-    static int      nqueries = 1;
-    char            nqueries_str[6];
-    int             new_line;
-
-    new_line = 1;
-    is_there = 0;
-    for (int npackets = 0; npackets < g_data.options.q; npackets++)
-    {
-        ft_bzero(buf, ft_strlen(buf));
-
-        FD_ZERO(&g_data.socket.readfds);
-        FD_SET(SOCK_FD, &g_data.socket.readfds);
-
-        wait.tv_sec = 3;
-        wait.tv_usec = 0;
-
-        rv = select(SOCK_FD + 1, &g_data.socket.readfds, NULL, NULL, &wait);
-        g_data.recv_time = (struct timeval){0};
-        gettimeofday(&g_data.recv_time, NULL);
-
-        if (rv <= 0)
-            sprintf(str, " * ");
-        else
-        {
-            src_addr = (struct sockaddr){0};
-            addr_len = sizeof(struct sockaddr_in);
-            rv = recvfrom(SOCK_FD, buf, sizeof(buf), MSG_WAITALL, &src_addr, &addr_len);
-
-            struct sockaddr_in  sin = *(struct sockaddr_in *)&src_addr;
-            presentable(sin.sin_addr, g_data.presentable.current, PRESENT_SIZE);
-            if (ft_strcmp(prv_str, g_data.presentable.current) == 0)
-                sprintf(str, " %.3lfms ", delta_t(g_data.send_time, g_data.recv_time));
-            else
-                sprintf(str, " %s  %.3lfms ", g_data.presentable.current, delta_t(g_data.send_time, g_data.recv_time));
-        }
-
-        if (!ft_strcmp(g_data.presentable.current, g_data.presentable.target))
-            is_there = 1;
-
-        if (new_line)
-        {
-            sprintf(nqueries_str, "% 3d  ", nqueries);
-            ft_putstr(nqueries_str);
-            new_line = 0;
-        }
-
-        ft_bzero(prv_str, sizeof(prv_str));
-        ft_memcpy(prv_str, g_data.presentable.current, sizeof(g_data.presentable.current));
-        ft_putstr(str);
-    }
-    nqueries++;
-    return (is_there);
-}
-
-
-void    loop()
-{
-    int     ttl;
-
-    presentable(g_data.dinfo.sin->sin_addr, g_data.presentable.target, PRESENT_SIZE);
-    printf("traceroute to %s (%s), %lld hops max\n", 
-        g_data.target, 
-        g_data.presentable.target, 
-        g_data.options.m
-    );
-
-    ttl = 1;
-    for (int nqueries = 0; nqueries < g_data.options.m; nqueries++)
-    {
-        setsockopt(SOCK_FD, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl));
-        send_packets();
-        if (receive_packets())
-        {
-            printf("\n");
-            break;
-        }
-        printf("\n");
-        ttl++;
-    }
-}
-
-int main(int argc, char **argv)
-{
-    g_data.target = argv[1];
-    g_data.options.m = 64;
+    g_data.options = (t_options){0};
+    g_data.options.M = 1;
     g_data.options.q = 3;
-    resolve_destination();
-    setup_socket();
-    loop();
+    g_data.options.n = 0;
+    g_data.options.m = 64;
+    g_data.options.S = 0;
+    g_data.options.w = 5;
+    // i = 0;
+    // while (i < argc)
+    // {
+    //     if (!ft_strcmp(argv[i], "-"))
+    //         g_data.options.m = ;
+    //     else if (!ft_begins_with(argv[i], "-"))
+    //     {
+    //         fprintf(stderr, "unrecognized option: `%s`", argv[i]);
+    //         exit(0);
+    //     }
+    //     else
+    //         g_data.target = argv[i];
+    //     i++;
+    // }
+    // if (g_data.target == NULL)
+    // {}
+}
+
+void    create_socket()
+{
+    g_data.socket.fd = 
+}
+
+void    send_packet()
+{
+
+}
+
+void    recv_packet()
+{
+
+}
+
+void    traceroute_loop()
+{
+    int i_m;
+    int i_q;
+
+    i_m = 0;
+    while (i_m < g_data.options.m)
+    {
+        i_q = 0;
+        while (i_q < g_data.options.q)
+        {
+            send_packet();
+            recv_packet();
+            i_q++;
+        }
+        i_m++;
+    }
+}
+
+int     resolve_target()
+{
+    struct addrinfo ai;
+    struct addrinfo hints;
+    struct addrinfo *ptr;
+    int             ret;
+
+    ft_bzero(&hints, sizeof(struct addrinfo));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_RAW;
+    hints.ai_protocol = IPPROTO_ICMP;
+    ret = getaddrinfo(g_data.target, NULL, &hints, &g_data.dinfo.result);
+    if (ret == 0)
+    {
+        for (ptr = g_data.dinfo.result; ptr; ptr = ptr->ai_next)
+        {
+            if (ptr->ai_family == AF_INET
+             && ptr->ai_protocol == IPPROTO_ICMP
+             && ptr->ai_socktype == SOCK_RAW)
+                break ;
+        }
+        if (ptr)
+            g_data.dinfo.ai = *ptr;
+    }
+    return (ret);
+}
+
+int     main(int argc, char **argv)
+{
+    parse_options(argc - 1, argv + 1);
+    g_data.target = argv[1];
+    if (resolve_target() != 0)
+    {
+        printf("Mok\n");
+        exit(0);
+    }
+    traceroute_loop();
     return (0);
 }
