@@ -13,9 +13,11 @@
 # include <arpa/inet.h>
 # include <netinet/ip_icmp.h>
 # include <netinet/ip.h>
+# include <netinet/udp.h>
 # include <sys/time.h>
 # include "libft.h"
 
+# define USE_ICMP    (g_data.options.I)
 # define PACKET_SIZE (sizeof(struct icmphdr))
 # define SOCK_FD     g_data.socket.fd
 # define READ_FDS    g_data.socket.readfds
@@ -34,15 +36,27 @@ typedef struct  s_options
     long long   M;  // first_ttl
     long long   q;  // Max number probs per ttl/hop
     int         n;  // Print numerical address only
-    int         S;  // Print loss percentage
     int         w;  // waittime
-    int         z;  // pausemsecs
 }   t_options;
+
+typedef struct s_sockaddrs
+{
+    struct sockaddr sa_send;
+    struct sockaddr sa_recv;
+    struct sockaddr sa_bind;
+}   t_sockaddrs;
+
+typedef struct  s_packet
+{
+    char    buff[1024];
+    size_t  size;
+}   t_packet;
 
 typedef struct s_socket
 {
-    int     fd;
-    fd_set  readfds;
+    int     rfd;
+    int     sfd;
+    fd_set  fds;
 }   t_socket;
 
 typedef struct s_presentable
@@ -62,6 +76,9 @@ typedef struct  s_traceroute
     char            *target;
     struct timeval  send_time;
     struct timeval  recv_time;
+    int             protocol;
+    int             type;
+    t_sockaddrs     sa;
 }   t_traceroute;
 
 extern t_traceroute g_data;
