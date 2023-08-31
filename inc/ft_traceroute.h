@@ -1,7 +1,6 @@
 #ifndef FT_TRACEROUTE
 # define FT_TRACEROUTE
 
-
 # include <unistd.h>
 # include <stdio.h>
 # include <stdlib.h>
@@ -15,13 +14,8 @@
 # include <netinet/ip.h>
 # include <netinet/udp.h>
 # include <sys/time.h>
+# include <stdbool.h>
 # include "libft.h"
-
-# define USE_ICMP    (g_data.options.I)
-# define PACKET_SIZE (sizeof(struct icmphdr))
-# define SOCK_FD     g_data.socket.fd
-# define READ_FDS    g_data.socket.readfds
-# define PRESENT_SIZE 256
 
 typedef struct  s_destinfo
 {
@@ -32,11 +26,12 @@ typedef struct  s_destinfo
 typedef struct  s_options
 {
     int         opt;
-    long long   m;  // max_ttl
-    long long   M;  // first_ttl
-    long long   q;  // Max number probs per ttl/hop
-    int         n;  // Print numerical address only
-    int         w;  // waittime
+    long long   f;
+    long long   q;
+    int         n;
+    int         w;
+    int         p;
+    int         I;
 }   t_options;
 
 typedef struct s_sockaddrs
@@ -56,26 +51,17 @@ typedef struct s_socket
 {
     int     rfd;
     int     sfd;
-    fd_set  fds;
 }   t_socket;
-
-typedef struct s_presentable
-{
-    char    target[PRESENT_SIZE];
-    char    current[PRESENT_SIZE];
-}   t_presentable;
 
 typedef struct  s_traceroute
 {
     t_destinfo      dinfo;
     t_options       options;
     t_socket        socket;
-    t_presentable   presentable;
-    size_t          sequence;
-    char            packet[PACKET_SIZE];
     char            *target;
     struct timeval  send_time;
     struct timeval  recv_time;
+    struct in_addr  last_addr;
     int             protocol;
     int             type;
     t_sockaddrs     sa;
